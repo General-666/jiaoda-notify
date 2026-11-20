@@ -8,7 +8,6 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
-import android.webkit.CookieManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.Worker
@@ -21,14 +20,18 @@ class NoticeWorker(appContext: Context, params: WorkerParameters) : Worker(appCo
     override fun doWork(): Result {
         val ctx = applicationContext
 
-        val cookie = CookieManager.getInstance().getCookie(PortalApi.PORTAL)
-        if (cookie.isNullOrBlank() || !cookie.contains("JSESSIONID")) {
+        val list = try {
+            Notices.loadBlocking(ctx, 45000)
+        } catch (_: Exception) {
+            null
+        }
+        if (list == null) {
+            Store.setLogged(ctx, false)
             notifyText(ctx, "需要重新登录", "登录态已失效，打开应用重新登录「智慧交大」")
             return Result.success()
         }
 
         return try {
-            val list = PortalApi.fetch(cookie)
             val seen = Store.seen(ctx)
             val fresh = list.filter { it.id !in seen }
             val first = !Store.isFirstDone(ctx)

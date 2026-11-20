@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var adapter: ArrayAdapter<String>
     private val titles = ArrayList<String>()
+    private var loading = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +76,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loggedIn(): Boolean {
+        if (Store.isLogged(this)) return true
         val ck = CookieManager.getInstance().getCookie(PortalApi.PORTAL)
         return !ck.isNullOrBlank() && ck.contains("JSESSIONID")
     }
@@ -85,28 +87,32 @@ class MainActivity : AppCompatActivity() {
         val lastText = if (last <= 0) "还没检查过" else
             SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(Date(last))
 
-        val sb = StringBuilder()
-        sb.append(if (loggedIn()) "状态：已登录" else "状态：未登录（点「登录」输入学号密码）")
-        sb.append("\n每天 ").append(hour).append(":00 自动检查 · 上次：").append(lastText)
-        statusText.text = sb.toString()
-
-        titles.clear()
-        val cookie = CookieManager.getInstance().getCookie(PortalApi.PORTAL)
-        if (!cookie.isNullOrBlank() && cookie.contains("JSESSIONID")) {
-            Thread {
-                try {
-                    val list = PortalApi.fetch(cookie).take(10)
-                    runOnUiThread {
-                        titles.clear()
-                        list.forEach { titles.add(it.title + "\n" + it.unit + " · " + it.timeText()) }
-                        adapter.notifyDataSetChanged()
-                    }
-                } catch (_: Exception) {
-                }
-            }.start()
-        } else {
-            adapter.notifyDataSetChanged()
+        statusText.text = buildString {
+            append(if (loggedIn()) "状态：已登录" else "状态：未登录（点「登录」输入学号密码）")
+            append("\n每天 ").append(hour).append(":00 自动检查 · 上次：").append(lastText)
         }
+
+        if (loading || !loggedIn()) return
+        loading = true
+        Thread {
+            val list = try {
+                Notices.loadBlocking(this, 30000)
+            } catch (_: Exception) {
+                null
+            }
+            runOnUiThread {
+                loading = false
+                if (list != null) {
+                    titles.clear()
+                    list.take(10).forEach { titles.add(it.title + "\n" + it.unit + " · " + it.timeText()) }
+                    adapter.notifyDataSetChanged()
+                    statusText.text = buildString {
+                        append("状态：已登录 · 已读取 ").append(list.size).append(" 条")
+                        append("\n每天 ").append(hour).append(":00 自动检查 · 上次：").append(lastText)
+                    }
+                }
+            }
+        }.start()
     }
 
     private fun pickHour() {

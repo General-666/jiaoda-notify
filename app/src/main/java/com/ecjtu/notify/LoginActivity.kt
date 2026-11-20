@@ -9,6 +9,8 @@ import androidx.appcompat.app.AppCompatActivity
 
 class LoginActivity : AppCompatActivity() {
 
+    private var checking = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_login)
@@ -20,17 +22,25 @@ class LoginActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
 
+        WebFetch.attach(web, destroyOnFinish = false) { body ->
+            checking = false
+            val ok = body != null && (body.contains("RESOURCE_ID") || body.contains("totalCount"))
+            if (ok) {
+                CookieManager.getInstance().flush()
+                Store.setLogged(this, true)
+                Toast.makeText(this, "登录成功", Toast.LENGTH_SHORT).show()
+                finish()
+            }
+        }
+
         web.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                val ck = CookieManager.getInstance().getCookie(PortalApi.PORTAL)
-                if (!ck.isNullOrBlank() && ck.contains("JSESSIONID") &&
-                    url != null && url.contains("portal.ecjtu.edu.cn")
-                ) {
-                    CookieManager.getInstance().flush()
-                    Toast.makeText(this@LoginActivity, "登录成功", Toast.LENGTH_SHORT).show()
-                    finish()
-                }
+                if (view == null || url == null) return
+                if (!url.contains("portal.ecjtu.edu.cn")) return
+                if (checking) return
+                checking = true
+                WebFetch.probe(view)
             }
         }
 
